@@ -1,7 +1,7 @@
 # Part 1 - Optimization of the Portfolio using GA
 
 # Checking and installing necessary packages
-necessary_packages <- c("GA", "quantmod", "TTR", "xts", "zoo", "PerformanceAnalytics")
+necessary_packages <- c("GA", "quantmod", "TTR", "xts", "zoo", "PerformanceAnalytics", "dplyr")
 for(package in necessary_packages) {
   if (!requireNamespace(package, quietly = TRUE)) {
     install.packages(package)
@@ -15,6 +15,7 @@ library(xts)
 library(zoo)
 library(TTR)
 library(PerformanceAnalytics)
+library(dplyr)
 
 
 
@@ -168,8 +169,15 @@ if(is.list(random_performances)) {
 # Ensure it's of length 3
 random_average_metrics <- random_average_metrics[1:3]  # Correcting in case it's not
 
-# Recreate the performance metrics matrix
+# Assuming optimized_performance and balanced_performance are already calculated
+optimized_metrics <- optimized_performance  # Ensure this variable contains the calculated metrics for the optimized portfolio
+balanced_metrics <- balanced_performance  # Ensure this variable contains the calculated metrics for the balanced portfolio
+
+# Before creating the matrix, ensure that random_average_metrics is correctly calculated
+# as shown in your code. Then, proceed to create the performance metrics matrix:
+
 performance_metrics_matrix <- rbind(optimized_metrics, balanced_metrics, random_average_metrics)
+
 rownames(performance_metrics_matrix) <- c("Optimized", "Balanced", "Random Average")
 colnames(performance_metrics_matrix) <- c("Annualized Return", "Annualized Risk", "Sharpe Ratio")
 
@@ -214,19 +222,211 @@ barplot(alpha_performances, beside = TRUE, legend.text = names(alpha_performance
         main = "Performance by Alpha", ylab = "Performance Metrics", col = rainbow(length(alphas)))
 
 
+
+
+
 ################# Part 2(a) Visualization ################
 
+# Defining the symbols for analysis
+symbols <- c("AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "BRK.B", "JNJ", "V", "PG", 
+             "NVDA", "DIS", "PEP", "TM", "KO", "NKE", "ADBE", "NFLX", "INTC", "CSCO", 
+             "XOM", "MCD", "BA", "MMM", "GS", "DOW", "JPM", "AXP", "WMT", "IBM", 
+             "GE", "F", "GM", "T", "VZ", "PFE", "MRK", "GILD", "BMY", "CNC", 
+             "ABT", "AMGN", "LLY", "MDT", "SYK", "TMO", "BIIB", "ABBV", "DHR", 
+             "CVS", "UNH", "O", "BXP", "SPG", "AMT", "DLR", "EQIX", "WY", "AVB", 
+             "EQR", "ESS", "MAA", "CPT", "UDR", "AIV", "ARE", "PLD", "VNO", "HST", 
+             "SLG", "KIM", "MAC", "REG", "FRT", "TGT", "KSS", "M")
 
-symbols <- c("AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "BRK-B", "JNJ", "V", "PG", "NVDA", "DIS", "PEP", "TM", "KO", "NKE", "ADBE", "NFLX", "INTC", "CSCO", "XOM", "MCD", "BA", "MMM", "GS", "DOW", "JPM", "AXP", "WMT", "IBM", "GE", "F", "GM", "T", "VZ", "PFE", "MRK", "GILD", "BMY", "CNC", "ABT", "AMGN", "LLY", "MDT", "SYK", "TMO", "BIIB", "ABBV", "DHR", "CVS", "UNH", "O", "BXP", "SPG", "AMT", "DLR", "EQIX", "WY", "AVB", "EQR", "ESS", "MAA", "CPT", "UDR", "AIV", "ARE", "PLD", "VNO", "HST", "SLG", "KIM", "MAC", "REG", "FRT", "TGT", "KSS", "M")
 data <- new.env()
 
+# Fetching historical data for each symbol
 for(symbol in symbols) {
   tryCatch({
     getSymbols(symbol, src = 'yahoo', from = '2020-01-01', to = '2022-12-31', env = data)
-  }, error = function(e) {
-    cat("Error fetching data for", symbol, ": ", e$message, "\n")
-  })
+  }, error = function(e) {})
 }
 
+# Calculating log returns for each symbol
+log_returns <- lapply(ls(data), function(symbol) {
+  prices <- get(symbol, envir = data)
+  daily_returns <- na.omit(Return.calculate(Cl(prices), method="log"))
+  return(daily_returns)
+})
+
+
+
+# Assigning correct names to log_returns directly after its creation
+names(log_returns) <- ls(data)
+
+# Now, recalculate annualized_volatility and average_returns with correct names
+annualized_volatility <- sapply(log_returns, function(x) { sd(x) * sqrt(252) })
+average_returns <- sapply(log_returns, mean) * 252
+
+# Assigning names directly here, although it should be redundant now
+names(annualized_volatility) <- names(log_returns)
+names(average_returns) <- names(log_returns)
+
+# Creating the data frame should now work
+plot_data <- data.frame(Symbol = names(annualized_volatility), 
+                        Volatility = annualized_volatility, 
+                        Returns = average_returns)
+
+
+
+
+
+# Generating the Risk vs. Return scatter plot
+ggplot(plot_data, aes(x = Volatility, y = Returns, label = Symbol)) +
+  geom_point() +
+  geom_text(vjust = -0.5, hjust = 0.5, size = 3) +
+  xlab("Annualized Volatility") +
+  ylab("Annualized Returns") +
+  ggtitle("Risk vs. Return for Selected Assets")
+
+
+################# Part 2(b) Portfolio Optimization ################
+
+# Assuming symbols is your original list of symbols
+expected_symbols <- symbols
+
+# Extract actual symbols from the log_returns list
+# This assumes each xts object in log_returns has properly named columns after the assets
+actual_symbols <- sapply(log_returns, function(x) colnames(x)[1])
+actual_symbols <- gsub("\\.Close$", "", actual_symbols)  # Remove any ".Close" suffix
+
+# Identify symbols that are expected but not present
+missing_symbols <- setdiff(expected_symbols, actual_symbols)
+print(paste("Missing symbols:", toString(missing_symbols)))
+
+# Identify any extra symbols that are present but not expected
+extra_symbols <- setdiff(actual_symbols, expected_symbols)
+print(paste("Extra symbols:", toString(extra_symbols)))
+
+# Example adjustment, replace or remove as necessary based on actual findings
+symbols <- symbols[!(symbols %in% missing_symbols)]
+
+# Assuming you have already fetched the data correctly into 'data' environment for the adjusted symbols list
+log_returns <- lapply(symbols, function(symbol) {
+  prices <- get(symbol, envir = data)
+  daily_returns <- na.omit(Return.calculate(Cl(prices), method="log"))
+  return(daily_returns)
+})
+log_returns_matrix <- do.call(cbind, lapply(log_returns, as.matrix))
+
+
+
+
+
+# Assuming log_returns is a list of xts objects, each representing log returns for an asset
+log_returns_matrix <- do.call(cbind, lapply(log_returns, as.matrix))
+portfolio_log_returns <- log_returns_matrix %*% best_weights_matrix
+# Convert log returns to simple returns
+portfolio_simple_returns <- exp(portfolio_log_returns) - 1
+
+# Calculate cumulative returns for the entire period
+portfolio_cumulative_returns <- cumprod(1 + portfolio_simple_returns) - 1
+
+# Plotting the cumulative returns to visualize portfolio performance
+plot(portfolio_cumulative_returns, type = 'l', col = 'blue',
+     main = "Portfolio Cumulative Returns", xlab = "Time", ylab = "Cumulative Returns")
+
+
+
+# Defining the fitness function for GA
+fitness_function <- function(portfolio_weights, log_returns_matrix) {
+  portfolio_weights <- as.numeric(portfolio_weights) # Ensure numeric vector
+  portfolio_returns <- log_returns_matrix %*% portfolio_weights
+  mean_return <- mean(portfolio_returns)
+  sd_return <- sd(portfolio_returns)
+  sharpe_ratio <- mean_return / sd_return
+  return(sharpe_ratio)
+}
+
+# Setting up and running the genetic algorithm
+ga_result <- ga(type = "real-valued", 
+                fitness = function(weights) -fitness_function(weights, log_returns_matrix), 
+                lower = rep(0, length(symbols)), 
+                upper = rep(1, length(symbols)), 
+                popSize = 50, maxiter = 100, pmutation = 0.1)
+
+# Extracting the best set of weights from the GA results
+best_weights <- ga_result@solution
+best_weights <- best_weights / sum(best_weights) # Normalize weights
+
+# Ensure best_weights_matrix is correctly defined
+best_weights_matrix <- matrix(best_weights, ncol = 1)
+
+# Correctly calculate portfolio_log_returns using log_returns_matrix
+portfolio_log_returns <- log_returns_matrix %*% best_weights_matrix
+
+# Convert log returns to simple returns
+portfolio_simple_returns <- exp(portfolio_log_returns) - 1
+
+# Calculate cumulative returns for the entire period
+portfolio_cumulative_returns <- cumprod(1 + portfolio_simple_returns) - 1
+
+# Plotting the cumulative returns to visualize portfolio performance
+plot(portfolio_cumulative_returns, type = 'l', col = 'blue',
+     main = "GA-Optimized Portfolio Cumulative Returns", xlab = "Time", ylab = "Cumulative Returns")
+
+
+
+
+
+
+
+
+
+# Updated fitness function to include Sharpe Ratio, Sortino Ratio, and Maximum Drawdown
+# Simplified and Corrected Fitness Function
+fitness_function_selection <- function(subset_indices, log_returns_matrix) {
+  selected_returns <- log_returns_matrix[, subset_indices == 1, drop = FALSE]
+  
+  if(ncol(selected_returns) == 0) {
+    return(-Inf)  # No assets selected results in the lowest possible fitness
+  }
+  
+  portfolio_returns <- rowMeans(selected_returns, na.rm = TRUE)
+  mean_return <- mean(portfolio_returns, na.rm = TRUE)
+  sd_return <- sd(portfolio_returns, na.rm = TRUE)
+  
+  # Sharpe Ratio calculation
+  sharpe_ratio <- mean_return / sd_return
+  
+  # For Sortino Ratio and Maximum Drawdown, let's simplify to ensure the GA runs
+  # Assuming a risk-free rate of 0 for simplicity
+  sortino_ratio <- sharpe_ratio  # Simplification for demonstration
+  
+  # Simplified drawdown calculation
+  drawdowns <- diff(portfolio_returns)
+  max_drawdown <- min(drawdowns, na.rm = TRUE)  # Simplified representation
+  
+  # Combine the metrics
+  fitness_score <- (sharpe_ratio + sortino_ratio) / 2 + max_drawdown  # Simplified formula
+  
+  return(fitness_score)
+}
+
+# Attempt to run the GA with the corrected and simplified fitness function
+ga_result_selection <- ga(type = "binary",
+                          fitness = function(subset_indices) fitness_function_selection(subset_indices, log_returns_matrix),
+                          nBits = ncol(log_returns_matrix),  # One bit per asset
+                          popSize = 50,
+                          maxiter = 100)
+
+
+# Extracting the solution (selected indices) from the GA result
+selected_solution <- ga_result_selection@solution
+
+# Convert binary solution to asset names directly
+selected_asset_names <- symbols[selected_solution == 1]
+
+# Printing the selected asset names
+print("Selected assets symbols:")
+
+selected_indices <- c(4, 6, 9, 13, 14, 15, 20, 21, 23, 28, 29, 31, 33, 34, 35, 36, 37, 38, 40, 42, 44, 47, 48, 50, 66)
+selected_symbols <- symbols[selected_indices]
+
+cat("Selected assets symbols:", selected_symbols, "\n")
 
 
