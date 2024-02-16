@@ -213,3 +213,20 @@ par(mfrow = c(1, 1), mar = c(5, 4, 4, 2) + 0.1)
 barplot(alpha_performances, beside = TRUE, legend.text = names(alpha_performances),
         main = "Performance by Alpha", ylab = "Performance Metrics", col = rainbow(length(alphas)))
 
+
+################# Part 2(a) Visualization ################
+
+
+symbols <- c("AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "BRK-B", "JNJ", "V", "PG", "NVDA", "DIS", "PEP", "TM", "KO", "NKE", "ADBE", "NFLX", "INTC", "CSCO", "XOM", "MCD", "BA", "MMM", "GS", "DOW", "JPM", "AXP", "WMT", "IBM", "GE", "F", "GM", "T", "VZ", "PFE", "MRK", "GILD", "BMY", "CNC", "ABT", "AMGN", "LLY", "MDT", "SYK", "TMO", "BIIB", "ABBV", "DHR", "CVS", "UNH", "O", "BXP", "SPG", "AMT", "DLR", "EQIX", "WY", "AVB", "EQR", "ESS", "MAA", "CPT", "UDR", "AIV", "ARE", "PLD", "VNO", "HST", "SLG", "KIM", "MAC", "REG", "FRT", "TGT", "KSS", "M")
+data <- new.env()
+
+for(symbol in symbols) {
+  tryCatch({
+    getSymbols(symbol, src = 'yahoo', from = '2020-01-01', to = '2022-12-31', env = data)
+  }, error = function(e) {
+    cat("Error fetching data for", symbol, ": ", e$message, "\n")
+  })
+}
+
+
+
