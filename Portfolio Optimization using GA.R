@@ -223,8 +223,6 @@ barplot(alpha_performances, beside = TRUE, legend.text = names(alpha_performance
 
 
 
-
-
 ################# Part 2(a) Visualization ################
 
 # Defining the symbols for analysis
@@ -253,8 +251,6 @@ log_returns <- lapply(ls(data), function(symbol) {
   return(daily_returns)
 })
 
-
-
 # Assigning correct names to log_returns directly after its creation
 names(log_returns) <- ls(data)
 
@@ -270,10 +266,6 @@ names(average_returns) <- names(log_returns)
 plot_data <- data.frame(Symbol = names(annualized_volatility), 
                         Volatility = annualized_volatility, 
                         Returns = average_returns)
-
-
-
-
 
 # Generating the Risk vs. Return scatter plot
 ggplot(plot_data, aes(x = Volatility, y = Returns, label = Symbol)) +
@@ -312,9 +304,6 @@ log_returns <- lapply(symbols, function(symbol) {
   return(daily_returns)
 })
 log_returns_matrix <- do.call(cbind, lapply(log_returns, as.matrix))
-
-
-
 
 
 # Assuming log_returns is a list of xts objects, each representing log returns for an asset
@@ -370,13 +359,6 @@ plot(portfolio_cumulative_returns, type = 'l', col = 'blue',
      main = "GA-Optimized Portfolio Cumulative Returns", xlab = "Time", ylab = "Cumulative Returns")
 
 
-
-
-
-
-
-
-
 # Updated fitness function to include Sharpe Ratio, Sortino Ratio, and Maximum Drawdown
 # Simplified and Corrected Fitness Function
 fitness_function_selection <- function(subset_indices, log_returns_matrix) {
@@ -428,5 +410,7 @@ selected_indices <- c(4, 6, 9, 13, 14, 15, 20, 21, 23, 28, 29, 31, 33, 34, 35, 3
 selected_symbols <- symbols[selected_indices]
 
 cat("Selected assets symbols:", selected_symbols, "\n")
+
+
 
 
