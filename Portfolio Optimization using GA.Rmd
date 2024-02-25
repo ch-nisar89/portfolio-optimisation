@@ -49,7 +49,7 @@ Fetching historical price data for the selected assets from 2020 to 2022.
 ```{r}
 asset_prices <- list()
 for(asset in my_assets) {
-  getSymbols(asset, from = "2020-01-01", to = "2022-12-31", auto.assign = TRUE)
+  getSymbols(asset, from = "2020-01-01", to = "2023-12-31", auto.assign = TRUE)
   asset_prices[[asset]] <- Cl(get(asset))
 }
 combined_prices <- do.call(merge, asset_prices)
@@ -98,7 +98,7 @@ normalized_optimal_weights <- optimal_weights / sum(optimal_weights)
 - Splitting the dataset into training and testing sets for a fair comparison
 - Splitting the dataset to train and test the portfolio, ensuring a robust evaluation of its future performance - historical data informing future decisions.
 ```{r}
-split_date <- as.Date("2022-01-01")
+split_date <- as.Date("2023-01-01")
 training_data <- daily_returns[index(daily_returns) < split_date]
 testing_data <- daily_returns[index(daily_returns) >= split_date]
 
@@ -286,7 +286,7 @@ symbols <- c("AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "JNJ", "V", "PG",
 
 # Fetching historical data for each symbol and calculate log returns
 data <- new.env()
-getSymbols(symbols, src = 'yahoo', from = '2020-01-01', to = '2022-12-31', env = data, auto.assign = TRUE)
+getSymbols(symbols, src = 'yahoo', from = '2020-01-01', to = '2023-12-31', env = data, auto.assign = TRUE)
 log_returns <- lapply(ls(data), function(symbol) {
   prices <- get(symbol, envir = data)
   Return.calculate(Cl(prices), method="log")
