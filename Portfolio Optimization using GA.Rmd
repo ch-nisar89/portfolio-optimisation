@@ -49,7 +49,7 @@ Fetching historical price data for the selected assets from 2020 to 2022.
 ```{r}
 asset_prices <- list()
 for(asset in my_assets) {
-  getSymbols(asset, from = "2020-01-01", to = "2023-12-31", auto.assign = TRUE)
+  getSymbols(asset, from = "2019-01-01", to = "2021-12-31", auto.assign = TRUE)
   asset_prices[[asset]] <- Cl(get(asset))
 }
 combined_prices <- do.call(merge, asset_prices)
@@ -71,7 +71,7 @@ myRetData <- daily_returns
 The Sharpe Ratio is chosen as it is a widely used measure for calculating risk-adjusted return, enhancing portfolio performance.
 
 ```{r}
-fitness_function_alpha <- function(weights, alpha=0.5) {
+fitness_function_alpha <- function(weights, alpha=0.5, riskFreeRate=0.025) {
   normalizedWeights <- weights / sum(weights)
   portfolioReturn <- sum(colMeans(myRetData, na.rm = TRUE) * normalizedWeights) * 252
   portfolioRisk <- sqrt(t(as.matrix(normalizedWeights)) %*% cov(myRetData) %*% as.matrix(normalizedWeights)) * sqrt(252)
@@ -85,11 +85,12 @@ fitness_function_alpha <- function(weights, alpha=0.5) {
 - Parameters such as population size and maximum iterations are tuned to efficiently search the solution space while balancing computational resources
 ```{r}
 ga_result <- ga(type = "real-valued",
-                fitness = function(weights) fitness_function_alpha(weights, alpha=0.5),
+                fitness = function(weights) fitness_function_alpha(weights, alpha=0.5, riskFreeRate=0.025),
                 lower = rep(0, length(my_assets)),
                 upper = rep(1, length(my_assets)),
                 popSize = 50,
-                maxiter = 100)
+                maxiter = 100,
+                elitism = 5)
 
 optimal_weights <- ga_result@solution
 normalized_optimal_weights <- optimal_weights / sum(optimal_weights)
@@ -98,17 +99,18 @@ normalized_optimal_weights <- optimal_weights / sum(optimal_weights)
 - Splitting the dataset into training and testing sets for a fair comparison
 - Splitting the dataset to train and test the portfolio, ensuring a robust evaluation of its future performance - historical data informing future decisions.
 ```{r}
-split_date <- as.Date("2023-01-01")
+split_date <- as.Date("2021-06-01")
 training_data <- daily_returns[index(daily_returns) < split_date]
 testing_data <- daily_returns[index(daily_returns) >= split_date]
 
 # Re-optimizing the portfolio using only the training data
 ga_result_training <- ga(type = "real-valued",
-                         fitness = function(weights) fitness_function_alpha(weights, alpha=0.5),
+                         fitness = function(weights) fitness_function_alpha(weights, alpha=0.5, riskFreeRate=0.025),
                          lower = rep(0, length(my_assets)),
                          upper = rep(1, length(my_assets)),
                          popSize = 50,
                          maxiter = 100,
+                         elitism = 5,
                          suggestions = normalized_optimal_weights) 
 
 optimal_weights_training <- ga_result_training@solution
@@ -158,7 +160,7 @@ calculate_performance <- function(weights, returns) {
   }
   
   # Calculating portfolio returns using the provided weights
-  portfolio_returns <- Return.portfolio(R = returns, weights = weights_vector, rebalance_on = "years")
+  portfolio_returns <- Return.portfolio(R = returns, weights = weights_vector, rebalance_on = "quarters")
   
   # Calculating annualized return, annualized risk and Sharpe Ratio
   annualized_return <- annualReturn(portfolio_returns, scale = 252)
@@ -190,14 +192,15 @@ print(random_performances)
 - By altering the alpha parameter, we simulated different investor profiles, from risk-averse (lower alpha) to return-seeking (higher alpha), analyzing how these preferences impact portfolio composition and performance.
 
 ```{r}
-alphas <- seq(0.1, 0.9, by = 0.2)
+alphas <- seq(0, 1, by = 0.1)
 alpha_performances <- sapply(alphas, function(alpha) {
   ga_result_alpha <- ga(type = "real-valued",
                         fitness = function(weights) fitness_function_alpha(weights, alpha = alpha),
                         lower = rep(0, length(my_assets)),
                         upper = rep(1, length(my_assets)),
                         popSize = 50,
-                        maxiter = 100)
+                        maxiter = 100,
+                        elitism = 5)
   optimal_weights_alpha <- ga_result_alpha@solution / sum(ga_result_alpha@solution)
   calculate_performance(optimal_weights_alpha, testing_data)
 })
@@ -286,7 +289,7 @@ symbols <- c("AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "JNJ", "V", "PG",
 
 # Fetching historical data for each symbol and calculate log returns
 data <- new.env()
-getSymbols(symbols, src = 'yahoo', from = '2020-01-01', to = '2023-12-31', env = data, auto.assign = TRUE)
+getSymbols(symbols, src = 'yahoo', from = '2019-01-01', to = '2021-12-31', env = data, auto.assign = TRUE)
 log_returns <- lapply(ls(data), function(symbol) {
   prices <- get(symbol, envir = data)
   Return.calculate(Cl(prices), method="log")
@@ -338,16 +341,23 @@ penalty_factor <- 1000
 fitness_function_selection <- function(subset_indices) {
   selected_returns <- do.call(cbind, log_returns)[, subset_indices == 1, drop = FALSE]
   
-  if(ncol(selected_returns) == 0) return(-Inf)
+  if (ncol(selected_returns) == 0) return(-Inf)
   
   penalty <- abs(preferred_asset_count - sum(subset_indices)) * penalty_factor
   portfolio_returns <- rowMeans(selected_returns)
-  sharpe_ratio <- mean(portfolio_returns) / sd(portfolio_returns)
+  portfolio_sd <- sd(portfolio_returns)
   
-  if(is.nan(sharpe_ratio) || is.infinite(sharpe_ratio)) return(-Inf)
+  if (portfolio_sd == 0 || is.nan(portfolio_sd) || is.infinite(portfolio_sd)) {
+    sharpe_ratio <- -Inf  # Assign a large penalty if SD is zero or undefined
+  } else {
+    sharpe_ratio <- mean(portfolio_returns) / portfolio_sd
+  }
+  
+  if (is.nan(sharpe_ratio) || is.infinite(sharpe_ratio)) return(-Inf)
   
   return(sharpe_ratio - penalty)
 }
+
 ```
 ### GA Selection
 - The population size (popSize) is set to 50 to ensure a good diversity in solutions while keeping computation times reasonable.
@@ -355,7 +365,7 @@ fitness_function_selection <- function(subset_indices) {
 
 ```{r}
 ga_selection <- ga(type = "binary", fitness = fitness_function_selection, 
-                   nBits = length(symbols), popSize = 50, maxiter = 100)
+                   nBits = length(symbols), popSize = 50, maxiter = 100, elitism = 5)
 
 selected_indices <- which(ga_selection@solution == 1)
 selected_symbols <- symbols[selected_indices]
@@ -384,7 +394,7 @@ fitness_function <- function(weights) {
 
 ga_result <- ga(type = "real-valued", fitness = fitness_function, 
                 lower = rep(0, length(selected_symbols)), upper = rep(1, length(selected_symbols)), 
-                popSize = 50, maxiter = 100, run = 50)
+                popSize = 50, maxiter = 100, elitism = 5, run = 50)
 
 best_weights <- ga_result@solution
 best_weights <- best_weights / sum(best_weights)
