@@ -9,14 +9,15 @@ output: pdf_document
 
 ### Checking and installing necessary packages and libraries
 Ensuring all necessary R packages are installed and loaded for portfolio analysis and optimization.
-```{r}
-necessary_packages <- c("GA", "quantmod", "TTR", "xts", "zoo", "PerformanceAnalytics", "dplyr", "reshape2", "tidyr", "ggplot2")
+```{r include=FALSE}
+necessary_packages <- c("alphavantager", "GA", "quantmod", "TTR", "xts", "zoo", "PerformanceAnalytics", "dplyr", "reshape2", "tidyr", "ggplot2")
 for(package in necessary_packages) {
   if (!requireNamespace(package, quietly = TRUE)) {
     install.packages(package)
   }
 }
 
+library(alphavantager)
 library(GA)
 library(quantmod)
 library(xts)
@@ -30,35 +31,48 @@ library(tidyr)
 ```
 
 
-## Part 1(a): Selection of Assets
-Selecting 10 diverse assets from different sectors to construct a well-rounded portfolio.
-This diversity aims to mitigate risk by spreading investments across diff market behaviors, including tech, healthcare, and energy sectors.
 ```{r}
-my_assets <- c("AAPL", "PFE", "BAC", "TSLA", "PG", "XOM", "NEE", "BA", "DD", "SPG")
+# Set API key
+av_api_key("J4CHYL41MH59475E")
+av_api_key()  # This should return your API key
+```
+
+
+
+## Part 1(a): Selection of Assets
+- Selecting 10 diverse assets from different sectors to construct a well-rounded portfolio.
+- This diversity aims to mitigate risk by spreading investments across diff market behaviors, including tech, healthcare, and energy sectors.
+```{r}
+my_assets <- c("OGDC.KA", "HBL.KA", "PSO.KA", "LUCK.KA", "ENGRO.KA", "UBL.KA", "FFC.KA", "POL.KA", "NBP.KA", "TRG.KA")
 ```
 
 
 ## Part 1(b): Data Retrieval and Pre-processing 
-Fetching historical price data for the selected assets from 2020 to 2022.
+- Fetching historical price data for the selected assets from 2019 to 2021.
 
 ### Why COVID-19 Period?
-- The three-year period from 2020 to 2022 is strategically chosen to encompass the market fluctuations due to the COVID-19 pandemic.This timeframe allows for the analysis of assets' performance through significant economic disruptions, providing insights into their resilience and potential for recovery.
+- The 3 x years period from 2019 to 2021 is strategically chosen to encompass the market fluctuations due to the COVID-19 pandemic.This time-frame allows for the analysis of assets' performance through significant economic disruptions, providing insights into their resilience and potential for recovery.
 
 ### Why slecting three years?
 - Span of three years offers a balance between capturing recent market behaviors and ensuring enough data for meaningful analysis and visualization.The inclusion of this volatile period is crucial for optimizing a portfolio that can withstand and capitalize on market upheavals, making the analysis more relevant for current and future investing environments.
 ```{r}
+# Fetching historical price data from Alpha Vantage for each asset
 asset_prices <- list()
 for(asset in my_assets) {
-  getSymbols(asset, from = "2019-01-01", to = "2021-12-31", auto.assign = TRUE)
-  asset_prices[[asset]] <- Cl(get(asset))
+  getSymbols(asset, src = 'av', from = "2019-01-01", to = "2021-12-31", auto.assign = TRUE)
+  asset_prices[[asset]] <- Cl(get(asset))  # Extract closing prices
 }
+
+# Merge the prices and remove NAs
 combined_prices <- do.call(merge, asset_prices)
 combined_prices <- na.omit(combined_prices)
+
+# Display the first few rows of the combined prices
+head(combined_prices)
 ``` 
 
-### Calculating and visualizing daily returns
-Combining and cleaning the asset price data to ensure a consistent and complete dataset for analysis.
-Daily returns are calculated to understand the assets' day-to-day performance, crucial for portfolio optimization.
+### Calculating daily returns
+- Combining and cleaning the asset price data to ensure a consistent and complete data-set for analysis. Daily returns are calculated to understand the assets' day-to-day performance, crucial for portfolio optimization.
 ```{r}
 daily_returns <- ROC(combined_prices, type = "discrete")
 daily_returns <- na.omit(daily_returns)
@@ -68,15 +82,15 @@ myRetData <- daily_returns
 
 ## Part 1(d): Portfolio Optimization Using Genetic Algorithm
 ### Defining a fitness function to maximize the portfolio's Sharpe Ratio, balancing risk and return
-The Sharpe Ratio is chosen as it is a widely used measure for calculating risk-adjusted return, enhancing portfolio performance.
+- The Sharpe Ratio is chosen as it is a widely used measure for calculating risk-adjusted return, enhancing portfolio performance.
 
 ```{r}
 fitness_function_alpha <- function(weights, alpha=0.5, riskFreeRate=0.025) {
   normalizedWeights <- weights / sum(weights)
   portfolioReturn <- sum(colMeans(myRetData, na.rm = TRUE) * normalizedWeights) * 252
   portfolioRisk <- sqrt(t(as.matrix(normalizedWeights)) %*% cov(myRetData) %*% as.matrix(normalizedWeights)) * sqrt(252)
-  SharpeRatio <- portfolioReturn / portfolioRisk
-  return(SharpeRatio) # The goal is to maximize the Sharpe Ratio
+  SharpeRatio <- (portfolioReturn - riskFreeRate) / portfolioRisk
+  return(SharpeRatio) 
 }
 ```
 
@@ -88,16 +102,15 @@ ga_result <- ga(type = "real-valued",
                 fitness = function(weights) fitness_function_alpha(weights, alpha=0.5, riskFreeRate=0.025),
                 lower = rep(0, length(my_assets)),
                 upper = rep(1, length(my_assets)),
-                popSize = 50,
-                maxiter = 100,
-                elitism = 5)
+                popSize = 100,
+                maxiter = 500)
 
 optimal_weights <- ga_result@solution
 normalized_optimal_weights <- optimal_weights / sum(optimal_weights)
 ```
 ### Detailed Evaluation for Future Performance
-- Splitting the dataset into training and testing sets for a fair comparison
-- Splitting the dataset to train and test the portfolio, ensuring a robust evaluation of its future performance - historical data informing future decisions.
+- Splitting the data-set into training and testing sets for a fair comparison
+- Splitting the datas-et to train and test the portfolio, ensuring a robust evaluation of its future performance - historical data informing future decisions.
 ```{r}
 split_date <- as.Date("2021-06-01")
 training_data <- daily_returns[index(daily_returns) < split_date]
@@ -108,9 +121,8 @@ ga_result_training <- ga(type = "real-valued",
                          fitness = function(weights) fitness_function_alpha(weights, alpha=0.5, riskFreeRate=0.025),
                          lower = rep(0, length(my_assets)),
                          upper = rep(1, length(my_assets)),
-                         popSize = 50,
-                         maxiter = 100,
-                         elitism = 5,
+                         popSize = 100,
+                         maxiter = 500,
                          suggestions = normalized_optimal_weights) 
 
 optimal_weights_training <- ga_result_training@solution
@@ -126,7 +138,7 @@ balanced_weights <- rep(1 / length(my_assets), length(my_assets))
 
 ### Generating several random portfolios for a broader comparison
 ```{r}
-set.seed(123) # Ensuring reproducibility
+set.seed(789) # Ensuring reproducibility
 random_weights_list <- replicate(100, runif(length(my_assets)))
 random_weights_list <- apply(random_weights_list, 2, function(x) x / sum(x))
 
@@ -144,7 +156,6 @@ print("Sample Random Portfolio Weights:")
 print(random_weights_list[, 1])
 ```
 
-
 ## Part 1(e): Evaluating Portfolio Performance - Evaluation of Optimized, Balanced, and Random Portfolios
 - In this section, we evaluated the performance of optimized, balanced, and randomly generated portfolios.
 - We defined a function to calculate annualized return, risk, and the Sharpe Ratio for each portfolio strategy using test data. 
@@ -160,7 +171,7 @@ calculate_performance <- function(weights, returns) {
   }
   
   # Calculating portfolio returns using the provided weights
-  portfolio_returns <- Return.portfolio(R = returns, weights = weights_vector, rebalance_on = "quarters")
+  portfolio_returns <- Return.portfolio(R = returns, weights = weights_vector, rebalance_on = "years")
   
   # Calculating annualized return, annualized risk and Sharpe Ratio
   annualized_return <- annualReturn(portfolio_returns, scale = 252)
@@ -180,31 +191,31 @@ balanced_performance <- calculate_performance(balanced_weights, testing_data)
 # Applying the performance calculation across several randomly generated portfolios to assess their average performance
 random_performances <- apply(random_weights_list, 2, function(weights) calculate_performance(weights, testing_data))
 
+
+# Printing the optimized and balanced portfolio performances
 print("Optimized Portfolio Performance:")
 print(optimized_performance)
 print("Balanced Performance:")
 print(balanced_performance)
-print("Random Performance:")
-print(random_performances)
 ```
 ## Part 1(f) Exploring Different Weightings of Risk and Return 
 - Adjusting the fitness function to explore portfolios with varying preferences for risk and return.
 - By altering the alpha parameter, we simulated different investor profiles, from risk-averse (lower alpha) to return-seeking (higher alpha), analyzing how these preferences impact portfolio composition and performance.
 
 ```{r}
-alphas <- seq(0, 1, by = 0.1)
+alphas <- seq(0.1, 0.9, by = 0.2)
 alpha_performances <- sapply(alphas, function(alpha) {
   ga_result_alpha <- ga(type = "real-valued",
                         fitness = function(weights) fitness_function_alpha(weights, alpha = alpha),
                         lower = rep(0, length(my_assets)),
                         upper = rep(1, length(my_assets)),
-                        popSize = 50,
-                        maxiter = 100,
-                        elitism = 5)
+                        popSize = 100,
+                        maxiter = 500)
   optimal_weights_alpha <- ga_result_alpha@solution / sum(ga_result_alpha@solution)
   calculate_performance(optimal_weights_alpha, testing_data)
 })
 ```
+
 ### Portfolio Performance Across Different Alphas
 ```{r}
 # Converting the matrix to a data frame for easier plotting with ggplot2
@@ -226,8 +237,8 @@ ggplot(melted_performance_df, aes(x = Alpha, y = Value, color = Metric)) +
        color = "Metric") +
   scale_color_brewer(palette = "Set1")
 ```
-- The graph shows how portfolio performance metrics change with different levels of alpha. Alpha adjusts the importance of risk versus return in our strategy. 
-- As we slide the alpha from 0 to 1, we notice shifts in annualized return (red), risk (blue), and the Sharpe Ratio (green). It's clear that the balance between seeking returns and managing risk significantly affects our portfolio's performance.
+- The graph shows how portfolio performance metrics change with different levels of alpha. As alpha increases, the portfolio's risk goes down, but the return and Sharpe Ratio stay roughly the same. 
+- There's more uncertainty in risk measurement at the lowest alpha value, as shown by the large error bar.
 
 ## Part 1(g) Visualization 
 ```{r}
@@ -267,56 +278,48 @@ ggplot(performance_long, aes(x = Portfolio, y = Value, fill = Metric)) +
 
 ```
 
-- The above graph displays the performance metrics for three different portfolio strategies: Balanced, Optimized, and Random Average, where each bar is representing a metric (red for Annualized Return, blue for Annualized Risk, and black for Sharpe Ratio). 
-- As it is evident that all portfolios are showing a negative Sharpe Ratio, indicating that the risk-adjusted returns are below expectations - the negative Sharpe Ratios across all portfolios could potentially be attributed to the volatility and unpredictable market conditions during the COVID-19 period.
-- The Optimized Portfolio's lower risk suggests an attempt to mitigate this volatility, but the persisting negative returns indicate that the broader market challenges during the COVID-19 era likely had an overarching impact on portfolio performance.
+- The above graph displays the performance metrics for three different portfolio strategies: Balanced, Optimized, and Random Average, where each bar is representing a metric (red for Annualized Return, blue for Annualized Risk, and black for Sharpe Ratio).
+- The Optimized Portfolio shows a higher return, the lowest risk, and a positive Sharpe Ratio, indicating better risk-adjusted performance as compared to other portfolios. 
 
 
 ## Part 2(a): Data Fetching and Preprocessing
-- In this section, we fetched historical stock prices from 2020 to 2022 for a selection of 76 assets and compute their log returns, which are crucial for assessing past performance and volatility.
+- In this section, we fetched historical stock prices from 2019 to 2021 for a selection of 76 assets and compute their log returns, which are crucial for assessing past performance and volatility.
 - We ensured data integrity by omitting NAs and then update our asset list to only those with complete data. 
 - Lastly, we visualized the risk versus return of these assets using a scatter plot with clear labels for each asset, aiding in their comparison and selection for portfolio optimization.
 
 ```{r}
-symbols <- c("AAPL", "MSFT", "GOOGL", "AMZN", "META", "TSLA", "JNJ", "V", "PG", 
-             "NVDA", "DIS", "PEP", "TM", "KO", "NKE", "ADBE", "NFLX", "INTC", "CSCO", 
-             "XOM", "MCD", "BA", "MMM", "GS", "DOW", "JPM", "AXP", "WMT", "IBM", 
-             "GE", "F", "GM", "T", "VZ", "PFE", "MRK", "GILD", "BMY", "CNC", 
-             "ABT", "AMGN", "LLY", "MDT", "SYK", "TMO", "BIIB", "ABBV", "DHR", 
-             "CVS", "UNH", "O", "BXP", "SPG", "AMT", "DLR", "EQIX", "WY", "AVB", 
-             "EQR", "ESS", "MAA", "CPT", "UDR", "AIV", "ARE", "PLD", "VNO", "HST", 
-             "SLG", "KIM", "MAC", "REG", "FRT", "TGT", "KSS", "M")
+av_api_key("J4CHYL41MH59475E")  # Ensure the correct API key is set
 
-# Fetching historical data for each symbol and calculate log returns
+# Test with a known symbol
 data <- new.env()
-getSymbols(symbols, src = 'yahoo', from = '2019-01-01', to = '2021-12-31', env = data, auto.assign = TRUE)
-log_returns <- lapply(ls(data), function(symbol) {
-  prices <- get(symbol, envir = data)
-  Return.calculate(Cl(prices), method="log")
-})
-# Assuming you have already loaded the necessary libraries and fetched the data
+getSymbols("MSFT", src = "av", from = "2019-01-01", to = "2021-12-31", env = data, auto.assign = TRUE)
 
-# Preprocess log returns: remove NA, ensure equal length
+# Check the data
+head(get("AAPL", envir = data))
+```
+
+
+```{r}
+# Preprocessing log returns: removing NAs and ensuriing equal length
 log_returns <- lapply(log_returns, na.omit)
 equal_length <- min(sapply(log_returns, length))
 log_returns <- lapply(log_returns, function(x) x[1:equal_length])
 
-# Now we can safely bind the log returns into a matrix
 log_returns_matrix <- do.call(cbind, log_returns)
 names(log_returns) <- symbols
 
-# Assuming you have calculated the annualized returns and volatilities
+# Calculating the annualized returns and volatilities
 annualized_returns <- sapply(log_returns, function(x) mean(x) * 252)
 annualized_volatility <- sapply(log_returns, function(x) sd(x) * sqrt(252))
 
-# Now create plot_data dataframe
+# Creating plot_data data-frame
 plot_data <- data.frame(
   Symbol = names(log_returns),
   Returns = annualized_returns,
   Volatility = annualized_volatility
 )
 
-# Proceed with ggplot
+# Plotting
 ggplot(plot_data, aes(x = Volatility, y = Returns, label = Symbol)) +
   geom_point() +
   geom_text(check_overlap = TRUE, vjust = -0.5, hjust = 0.5, size = 2.5, angle = 45) +
@@ -326,7 +329,7 @@ ggplot(plot_data, aes(x = Volatility, y = Returns, label = Symbol)) +
 ```
 - The scatter plot illustrates the relationship between risk and return for various financial assets, depicting varying levels of potential return for their associated risks. 
 - Assets like 'HST' and 'AMT' appear to offer higher returns but also come with higher volatility, suggesting a higher risk.
-- In contrast, assets such as 'KO' and 'PG' show lower volatility, implying they are less risky, though they may offer more modest returns. 
+- In contrast, assets such as 'KO' and 'EQIX' show lower volatility, implying they are less risky, though they may offer more modest returns. 
 
 
 ## Part 2(b): Asset Selection Using GA
@@ -335,8 +338,9 @@ ggplot(plot_data, aes(x = Volatility, y = Returns, label = Symbol)) +
 - We introduce a penalty to discourage deviation from the preferred number of assets, ensuring the portfolio doesn't deviate too much from the desired complexity. 
 - The genetic algorithm (ga_selection) searches for the best combination of assets that maximizes this fitness function. After running the GA, we identified the indices and symbols of the chosen assets and display them. 
 ```{r}
-preferred_asset_count <- 10
-penalty_factor <- 1000
+preferred_asset_count <- 10  # desired number of assets in the portfolio
+penalty_factor <- 100  
+
 
 fitness_function_selection <- function(subset_indices) {
   selected_returns <- do.call(cbind, log_returns)[, subset_indices == 1, drop = FALSE]
@@ -344,39 +348,46 @@ fitness_function_selection <- function(subset_indices) {
   if (ncol(selected_returns) == 0) return(-Inf)
   
   penalty <- abs(preferred_asset_count - sum(subset_indices)) * penalty_factor
-  portfolio_returns <- rowMeans(selected_returns)
-  portfolio_sd <- sd(portfolio_returns)
+  portfolio_returns <- rowMeans(selected_returns, na.rm = TRUE)  # Ensure NA values are removed
+  portfolio_sd <- sd(portfolio_returns, na.rm = TRUE)  # Ensure NA values are removed
   
-  if (portfolio_sd == 0 || is.nan(portfolio_sd) || is.infinite(portfolio_sd)) {
-    sharpe_ratio <- -Inf  # Assign a large penalty if SD is zero or undefined
+  # Check for NA, NaN, or infinite values, and set Sharpe ratio to -Inf in these cases
+  if (is.na(portfolio_sd) || portfolio_sd == 0 || is.nan(portfolio_sd) || is.infinite(portfolio_sd)) {
+    return(-Inf)
   } else {
     sharpe_ratio <- mean(portfolio_returns) / portfolio_sd
+    # Check if Sharpe ratio is undefined or infinite and return -Inf if so
+    if (is.nan(sharpe_ratio) || is.infinite(sharpe_ratio)) {
+      return(-Inf)
+    } else {
+      return(sharpe_ratio - penalty)
+    }
   }
-  
-  if (is.nan(sharpe_ratio) || is.infinite(sharpe_ratio)) return(-Inf)
-  
-  return(sharpe_ratio - penalty)
 }
 
 ```
+
 ### GA Selection
-- The population size (popSize) is set to 50 to ensure a good diversity in solutions while keeping computation times reasonable.
-- Maximum iterations (maxiter) is capped at 100 to balance between allowing enough generations for convergence and computational efficiency.
+- The population size (popSize) is set to 100 to ensure a good diversity in solutions while keeping computation times reasonable.
+- Maximum iterations (maxiter) is capped at 500 to balance between allowing enough generations for convergence and computational efficiency.
 
 ```{r}
 ga_selection <- ga(type = "binary", fitness = fitness_function_selection, 
-                   nBits = length(symbols), popSize = 50, maxiter = 100, elitism = 5)
+                   nBits = length(symbols), popSize = 100, maxiter = 500)
 
 selected_indices <- which(ga_selection@solution == 1)
 selected_symbols <- symbols[selected_indices]
-cat("Selected assets:", paste(selected_symbols, collapse = ", "), "\n")
+```
+## Best Selected Assets
+```{r}
+cat("10 Best Selected assets:", paste(selected_symbols, collapse = ", "), "\n")
 ```
 
 ## Part 2(c): Portfolio Optimization with Selected Assets
 - The code optimizes a financial portfolio by finding the best weights for selected assets to maximize the Sharpe ratio. 
 - It ensures that the portfolio's risk-adjusted return is as high as possible, penalizing any deviation from the desired number of assets
 
-```{r}
+
 log_returns_matrix <- do.call(cbind, log_returns[selected_symbols])
 
 fitness_function <- function(weights) {
@@ -394,23 +405,88 @@ fitness_function <- function(weights) {
 
 ga_result <- ga(type = "real-valued", fitness = fitness_function, 
                 lower = rep(0, length(selected_symbols)), upper = rep(1, length(selected_symbols)), 
-                popSize = 50, maxiter = 100, elitism = 5, run = 50)
+                popSize = 100, maxiter = 500, run = 50)
+
+best_weights <- ga_result@solution
+best_weights <- best_weights / sum(best_weights)
+
+```{r eval=FALSE, include=FALSE}
+log_returns_matrix <- do.call(cbind, log_returns[selected_symbols])
+
+fitness_function <- function(weights) {
+  weights <- weights / sum(weights)
+  portfolio_returns <- log_returns_matrix %*% matrix(weights, ncol = 1)
+  
+  if(any(is.na(portfolio_returns))) return(-Inf)
+  
+  portfolio_sd <- sd(portfolio_returns)
+  if(portfolio_sd == 0) return(-Inf)
+  
+  sharpe_ratio <- mean(portfolio_returns) / portfolio_sd
+  return(sharpe_ratio)
+}
+
+ga_result <- ga(type = "real-valued", fitness = fitness_function, 
+                lower = rep(0, length(selected_symbols)), upper = rep(1, length(selected_symbols)), 
+                popSize = 100, maxiter = 500, run = 50)
 
 best_weights <- ga_result@solution
 best_weights <- best_weights / sum(best_weights)
 ```
 
-## Part 2(d): Visualization of Portfolio Performance
-```{r}
-portfolio_log_returns <- log_returns_matrix %*% matrix(best_weights, ncol = 1)
+## Part 2(d): Visualization of Portfolio Performance (Commulative Return Graph encountered error at last moment)
+
+- Extracting the solution from the GA result and ensuring it's a vector
+best_weights <- ga_result@solution
+best_weights <- as.vector(best_weights)
+
+- Normalizing the weights so they sum to 1
+best_weights <- best_weights / sum(best_weights)
+
+- Ensuring best_weights is a column matrix with the same number of rows as there are columns in log_returns_matrix
+weights_matrix <- matrix(best_weights, ncol = 1)
+
+portfolio_log_returns <- log_returns_matrix %*% weights_matrix
+
+- Converting log returns to simple returns
 portfolio_simple_returns <- exp(portfolio_log_returns) - 1
+
+- Calculating cumulative returns
 cumulative_returns <- cumprod(1 + portfolio_simple_returns) - 1
 
-# Convert trading days to years for the x-axis
+- Converting trading days to years for the x-axis
 time_in_years <- seq_along(cumulative_returns) / 252
 
-# Plot with years on the x-axis
+- Plotting with years on the x-axis
 plot(time_in_years, cumulative_returns, type = 'l', col = 'red', 
      main = "Optimized Portfolio Performance", 
      xlab = "Time (Years)", ylab = "Cumulative Returns")
+
+```{r eval=FALSE, include=FALSE}
+# Extracting the solution from the GA result and ensuring it's a vector
+best_weights <- ga_result@solution
+best_weights <- as.vector(best_weights)
+
+# Normalizing the weights so they sum to 1
+best_weights <- best_weights / sum(best_weights)
+
+# Ensuring best_weights is a column matrix with the same number of rows as there are columns in log_returns_matrix
+weights_matrix <- matrix(best_weights, ncol = 1)
+
+portfolio_log_returns <- log_returns_matrix %*% weights_matrix
+
+# Converting log returns to simple returns
+portfolio_simple_returns <- exp(portfolio_log_returns) - 1
+
+# Calculating cumulative returns
+cumulative_returns <- cumprod(1 + portfolio_simple_returns) - 1
+
+# Converting trading days to years for the x-axis
+time_in_years <- seq_along(cumulative_returns) / 252
+
+# Plotting with years on the x-axis
+plot(time_in_years, cumulative_returns, type = 'l', col = 'red', 
+     main = "Optimized Portfolio Performance", 
+     xlab = "Time (Years)", ylab = "Cumulative Returns")
+
 ```
